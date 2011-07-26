@@ -1,0 +1,7 @@
+An assembler for the MOS 6502 in perl.
+
+The idea is to use a simple case (being the 6502) to investigate the feasibility of producing a genericised assembler, driven by a set of rules produced by a machine description language, loaded as a perl module.
+
+Currently, it does none of this, but the ideas are there. the semantic rules are defined as a series of hashes, each of which describes a field of the instruction to be generated, as well as a link to where the next part of the instruction should be looked for. a mnemonic is read in and found in the instruction hash, after which the path diverges, in a similar manner to a DAG, until the next field reference is undef, after which, the instruction is generated.
+
+Instruction values are stored in the hashes as strings representing the binary value. This is converted to actual binary using the pack routine.
