@@ -118,7 +118,8 @@ while (<>)
        ($fs, $fr) = ($branch->[0], $branch->[1]);
        $opcode .= $fs;
    }
-   print "$line\t $mnemonic, $mode\t $opcode\n";
+   print "$line\t $mnemonic, $mode\t";
+   printf("%02x\n", ord(pack("B8", $opcode)));
 }
 
 
