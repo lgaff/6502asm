@@ -58,31 +58,31 @@
           );
 
 %addr_a = (
-              "INDR" => ["000", \%opcode_a],
-              "ZRP"  => ["001", \%opcode_a],
+              INDX => ["000", \%opcode_a],
+              ZRP  => ["001", \%opcode_a],
               IMM  => ["010", \%opcode_a],
-              "ABS"  => ["011", \%opcode_a],
-              "INDI" => ["100", \%opcode_a],
-              "INDZ" => ["101", \%opcode_a],
-              "ABSY" => ["110", \%opcode_a],
-              "ABSX" => ["111", \%opcode_a]
+              ABS  => ["011", \%opcode_a],
+              INDY => ["100", \%opcode_a],
+              ZPX  => ["101", \%opcode_a],
+              ABSY => ["110", \%opcode_a],
+              ABSX => ["111", \%opcode_a]
              );
 
 %addr_b = (
-              "IMM"  => ["000", \%opcode_b],
-              "ZRP"  => ["001", \%opcode_b],
-              "ACC"  => ["010", \%opcode_b],
-              "ABS"  => ["011", \%opcode_b],
-              "INDZ" => ["101", \%opcode_b],
-              "ABSX" => ["111", \%opcode_b],
+              IMM  => ["000", \%opcode_b],
+              ZRP  => ["001", \%opcode_b],
+              ACC  => ["010", \%opcode_b],
+              ABS  => ["011", \%opcode_b],
+              ZPX  => ["101", \%opcode_b],
+              ABSX => ["111", \%opcode_b],
              );
 
 %addr_c = (
-              "IMM"  => ["000", \%opcode_c],
-              "ZRP"  => ["001", \%opcode_c],
-              "ABS"  => ["011", \%opcode_c],
-              "INDZ" => ["101", \%opcode_c],
-              "ABSX" => ["111", \%opcode_c],
+              IMM  => ["000", \%opcode_c],
+              ZRP  => ["001", \%opcode_c],
+              ABS  => ["011", \%opcode_c],
+              ZPX  => ["101", \%opcode_c],
+              ABSX => ["111", \%opcode_c],
              );
 
 # Compute the final field from existing hashes.
@@ -112,20 +112,16 @@ $hexpat = "[0-9a-fA-F]";
         ABSY=> ["^\\\$".$hexpat."{4}\$", "^Y\$"],
         INDX=> ["^\\(\\\$".$hexpat."{2},X\\)\$"],
         INDY=> ["^\\(\\\$".$hexpat."{2}\\)\$", "^Y\$"],
+        INDR=> ["^\\(\\\$".$hexpat."{4}\\)\$"],
         ACC => ["^A"] );
 
-print $hexpat.$/;
-foreach $key (keys %addr_modes)
-{
-    print $key . "(".@{$addr_modes{$key}} .")\t=>\t". $addr_modes{$key}->[0].$/;
-}
 while (<>)
 {
     @argv = ();
     $line++;
     chomp;
 # tokenise the input line.
-    m/(?<LABEL>\w+(?=:))?:?\s*?(?<INSTR>\w{3,4})\s+(?<A1>(\#?\$?[a-fA-F0-9]{2,4})|\w+|A|\(.+?\))?,? *(?<A2>\$?([a-fA-F0-9]{2,4})|\w+|[XY])?/ || die("Syntax error. Line $line\n");
+    m/(?<LABEL>\w+(?=:))?:?\s*?(?<INSTR>\w{3,4})\s*(?<A1>(\#?\$?[a-fA-F0-9]{2,4})|\w+|A|\(.+?\))?,? *(?<A2>\$?([a-fA-F0-9]{2,4})|\w+|[XY])?/ || die("Syntax error. Line $line\n");
 
     ($a1, $a2, $instr, $label) = ($+{A1}, $+{A2}, $+{INSTR}, $+{LABEL});
     if($a1)
@@ -138,16 +134,17 @@ while (<>)
     }
     
     $argc = scalar @argv;
-    print "Line: $line ($_)\n";
-    print "$argc arguments\n";
-    foreach $key (keys %+)
-    {
-        print "$key: $+{$key}\n";
-    }
-    print "Address mode: ";
+#    print "Line: $line ($_)\n";
+#    print "$argc arguments\n";
+#    foreach $key (keys %+)
+#    {
+#        print "$key: $+{$key}\n";
+#    }
+#    print "Address mode: ";
     if ($argc == 0)
     {
-        print "Implied addressing\n";
+        $mode = "IMP";
+#        print "Implied addressing\n";
     }
     else
     {
@@ -178,20 +175,18 @@ while (<>)
                 }
             }
         }
-        print $/;
-        if ($match == $argc) # we have a winner Kay
-        {
-            print $mode .$/;
-        }
-        else
-        {
-            print "No matching address mode found\n";
-        }
+#        if ($match == $argc) # we have a winner Kay
+#        {
+#            print $mode .$/;
+#        }
+#        else
+#        {
+#            die "No matching address mode found\n";
+#        }
     }
 
-    print $/;
-    next;
-    exists $instructions{$instr}|| die("Illegal instruction: $mnemonic, line $line\n");
+#    print $/;
+    exists $instructions{$instr}|| die("Illegal instruction: $instr, line $line\n");
     if ($label) # Check if the label is known, throw a redefinition error if so, or otherwise add its location to the symbol table
     {
         if(exists $symbol_table{$label}) {
@@ -201,21 +196,28 @@ while (<>)
             $symbol_table{$label} = $byte_loc;
         }
     }
-    
-    # Now check how many args we have to the instruction
 
-
-   $head = $instructions{$mnemonic};
+   $head = $instructions{$instr};
    ($opcode, $fr) = ($head->[0], $head->[1]);
    while ($fr)
   {
-       exists $fr->{$mode}|| die("Illegal addressing mode $mode for instruction $mnemonic, line $line\n");
+       exists $fr->{$mode}|| die("Illegal addressing mode $mode for instruction $instr, line $line\n");
        $branch = $fr->{$mode};
        ($fs, $fr) = ($branch->[0], $branch->[1]);
        $opcode .= $fs;
    }
-   print "$line\t $mnemonic, $mode\t";
-   printf("%02x\n", ord(pack("B8", $opcode)));
+   $asm = sprintf("%02x", ord(pack("B8",$opcode)));
+   foreach $arg (@argv)
+   {
+       if ($arg =~ /\#?\$?($hexpat)/)
+       {
+           $asm .= $1;
+       }
+   }
+   print "$line\t$opcode\t$instr\t$a1\t$a2\t$mode\t";
+   print $asm;
+   print $/;
+   
 }
 
 
