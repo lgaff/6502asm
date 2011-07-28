@@ -101,13 +101,109 @@ foreach $mode (keys %addr_c)
     $opcode_c{$mode} = ["00", undef];
 }
 
+# Address mode patterns
+$hexpat = "[0-9a-fA-F]";
+%addr_modes = (
+        IMM => ["^\\#\\\$".$hexpat."{2}\$"],
+        ZRP => ["^\\\$".$hexpat."{2}\$"],
+        ZPX => ["^\\\$".$hexpat."{2}\$", "^X\$"],
+        ABS => ["^\\\$".$hexpat."{4}\$"],
+        ABSX=> ["^\\\$".$hexpat."{4}\$", "^X\$"],
+        ABSY=> ["^\\\$".$hexpat."{4}\$", "^Y\$"],
+        INDX=> ["^\\(\\\$".$hexpat."{2},X\\)\$"],
+        INDY=> ["^\\(\\\$".$hexpat."{2}\\)\$", "^Y\$"],
+        ACC => ["^A"] );
+
+print $hexpat.$/;
+foreach $key (keys %addr_modes)
+{
+    print $key . "(".@{$addr_modes{$key}} .")\t=>\t". $addr_modes{$key}->[0].$/;
+}
 while (<>)
 {
+    @argv = ();
     $line++;
     chomp;
-    s/[^0-9a-zA-Z:]//g;
-    ($mnemonic, $mode) = split/:/;
-    exists $instructions{$mnemonic}|| die("Illegal instruction: $mnemonic, line $line\n");
+# tokenise the input line.
+    m/(?<LABEL>\w+(?=:))?:?\s*?(?<INSTR>\w{3,4})\s+(?<A1>(\#?\$?[a-fA-F0-9]{2,4})|\w+|A|\(.+?\))?,? *(?<A2>\$?([a-fA-F0-9]{2,4})|\w+|[XY])?/ || die("Syntax error. Line $line\n");
+
+    ($a1, $a2, $instr, $label) = ($+{A1}, $+{A2}, $+{INSTR}, $+{LABEL});
+    if($a1)
+    {
+        push @argv, $a1;
+    }
+    if($a2)
+    {
+        push @argv, $a2;
+    }
+    
+    $argc = scalar @argv;
+    print "Line: $line ($_)\n";
+    print "$argc arguments\n";
+    foreach $key (keys %+)
+    {
+        print "$key: $+{$key}\n";
+    }
+    print "Address mode: ";
+    if ($argc == 0)
+    {
+        print "Implied addressing\n";
+    }
+    else
+    {
+        $match = 0;
+        $mode = "";
+        foreach $key (keys %addr_modes)
+        {
+            next if $match == $argc;
+            $match = 0;
+#print "Testing $key\n";
+            if (@{$addr_modes{$key}} == $argc) # First check, filters out processing any modes that have a different arg count
+            {
+                $arg = 0;
+                while ($arg < $argc)
+                {
+#print "Testing $argv[$arg] against $addr_modes{$key}->[$arg], argument $arg\n";
+                    if($argv[$arg] =~ m/$addr_modes{$key}->[$arg]/)
+                    {
+#                       print "Matched\n";
+                        $match++;
+                        $mode = $key;
+                    }
+                    else
+                    {
+#                       print "Not matched\n";
+                    }
+                    $arg++;
+                }
+            }
+        }
+        print $/;
+        if ($match == $argc) # we have a winner Kay
+        {
+            print $mode .$/;
+        }
+        else
+        {
+            print "No matching address mode found\n";
+        }
+    }
+
+    print $/;
+    next;
+    exists $instructions{$instr}|| die("Illegal instruction: $mnemonic, line $line\n");
+    if ($label) # Check if the label is known, throw a redefinition error if so, or otherwise add its location to the symbol table
+    {
+        if(exists $symbol_table{$label}) {
+            die("Redefinition of symbol $label, line $line.\n");
+        }
+        else {
+            $symbol_table{$label} = $byte_loc;
+        }
+    }
+    
+    # Now check how many args we have to the instruction
+
 
    $head = $instructions{$mnemonic};
    ($opcode, $fr) = ($head->[0], $head->[1]);
