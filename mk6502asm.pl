@@ -1,60 +1,76 @@
-%instructions = (
-              ORA => ["000", \%addr_a],
-              AND => ["001", \%addr_a],
-              EOR => ["010", \%addr_a],
-              ADC => ["011", \%addr_a],
-              STA => ["100", \%addr_a],
-              LDA => ["101", \%addr_a],
-              CMP => ["110", \%addr_a],
-              SBC => ["111", \%addr_a],
-              ASL => ["000", \%addr_b],
-              ROL => ["001", \%addr_b],
-              LSR => ["010", \%addr_b],
-              ROR => ["011", \%addr_b],
-              STX => ["100", \%addr_b],
-              LDX => ["101", \%addr_b],
-              DEC => ["110", \%addr_b],
-              INC => ["111", \%addr_b],
-              BIT => ["001", \%addr_c],
-              JMP => ["010", \%addr_c],
-              JMPA=> ["011", \%addr_c],
-              STY => ["100", \%addr_c],
-              LDY => ["101", \%addr_c],
-              CPY => ["110", \%addr_c],
-              CPX => ["111", \%addr_c],
-              BPL => ["00010000", undef],
-              BMI => ["00110000", undef],
-              BVC => ["01010000", undef],
-              BVS => ["01110000", undef],
-              BCC => ["10010000", undef],
-              BCS => ["10110000", undef],
-              BNE => ["11010000", undef],
-              BEQ => ["11110000", undef],
-              BRK => ["00000000", undef],
-              JSR => ["00100000", undef],
-              RTI => ["01000000", undef],
-              RTS => ["01100000", undef],
-              PHP => ["00001000", undef],
-              PLP => ["00101000", undef],
-              PHA => ["01001000", undef],
-              DEY => ["10001000", undef],
-              TAY => ["10101000", undef],
-              INY => ["11001000", undef],
-              INX => ["11101000", undef],
-              CLC => ["00011000", undef],
-              SEC => ["00111000", undef],
-              CLI => ["01011000", undef],
-              SEI => ["01111000", undef],
-              TYA => ["10011000", undef],
-              CLV => ["10111000", undef],
-              CLD => ["11011000", undef],
-              SED => ["11111000", undef],
-              TXA => ["10001010", undef],
-              TXS => ["10011010", undef],
-              TAX => ["10101010", undef],
-              TSX => ["10111010", undef],
-              DEX => ["11001010", undef],
-              NOP => ["11101010", undef]
+# Constant address mode masks
+use constant {
+    IMMDT   => 0x1,
+    ZEROP   => 0x2,
+    ZEROX   => 0x4,
+    ABSLT   => 0x8,
+    ABSLX   => 0x10,
+    ABSLY   => 0x20,
+    INDRX   => 0x40,
+    INDRY   => 0x80,
+    INDRC   => 0x100,
+    RELTV   => 0x200,
+    IMPLD   => 0x400,
+    ACMLT   => 0x800
+}
+
+%instructions = ( # First part of opcode, pointer to next part, address mode mask.
+              ORA => ["000", \%addr_a, IMMDT|ZEROP|ZEROX|ABSLT|ABSLX|ABSLY|INDRX|INDRY],
+              AND => ["001", \%addr_a, IMMDT|ZEROP|ZEROX|ABSLT|ABSLX|ABSLY|INDRX|INDRY],
+              EOR => ["010", \%addr_a, IMMDT|ZEROP|ZEROX|ABSLT|ABSLX|ABSLY|INDRX|INDRY],
+              ADC => ["011", \%addr_a, IMMDT|ZEROP|ZEROX|ABSLT|ABSLX|ABSLY|INDRX|INDRY],
+              STA => ["100", \%addr_a, ZEROP|ZEROX|ABSLT|ABSLX|ABSLY|INDRX|INDRY],
+              LDA => ["101", \%addr_a, IMMDT|ZEROP|ZEROX|ABSLT|ABSLX|ABSLY|INDRX|INDRY],
+              CMP => ["110", \%addr_a, IMMDT|ZEROP|ZEROX|ABSLT|ABSLX|ABSLY|INDRX|INDRY],
+              SBC => ["111", \%addr_a, IMMDT|ZEROP|ZEROX|ABSLT|ABSLX|ABSLY|INDRX|INDRY],
+              ASL => ["000", \%addr_b, ZEROP|ZEROX|ABSLT|ABSLX|ACMLT],
+              ROL => ["001", \%addr_b, ZEROP|ZEROX|ABSLT|ABSLX|ACMLT],
+              LSR => ["010", \%addr_b, ZEROP|ZEROX|ABSLT|ABSLX|ACMLT], 
+              ROR => ["011", \%addr_b, ZEROP|ZEROX|ABSLT|ABSLX|ACMLT],
+              STX => ["100", \%addr_b, ZEROP|ZEROY|ABSLT],
+              LDX => ["101", \%addr_b, IMMDT|ZEROP|ZEROY|ABSLT|ABSLY],
+              DEC => ["110", \%addr_b, ZEROP|ZEROX|ABSLT|ABSLX],
+              INC => ["111", \%addr_b, ZEROP|ZEROX|ABSLT|ABSLX],
+              BIT => ["001", \%addr_c, ZEROP|ABSLT],
+              STY => ["100", \%addr_c, ZEROP|ZEROY|ABSLT ],
+              LDY => ["101", \%addr_c, IMMDT|ZEROP|ZEROX|ABSLT|ABSLX ],
+              CPY => ["110", \%addr_c, IMMDT|ZEROP|ABSLT ],
+              CPX => ["111", \%addr_c, IMMDT|ZEROP|ABSLT ],
+              JMP => ["01", \%addr_d, ABSLT|INDRC ],
+              BPL => ["00010000", undef, RELTV],
+              BMI => ["00110000", undef, RELTV],
+              BVC => ["01010000", undef, RELTV],
+              BVS => ["01110000", undef, RELTV],
+              BCC => ["10010000", undef, RELTV],
+              BCS => ["10110000", undef, RELTV],
+              BNE => ["11010000", undef, RELTV],
+              BEQ => ["11110000", undef, RELTV],
+              BRK => ["00000000", undef, IMPLD],
+              JSR => ["00100000", undef, ABSLT],
+              RTI => ["01000000", undef, IMPLD],
+              RTS => ["01100000", undef, IMPLD],
+              PHP => ["00001000", undef, IMPLD],
+              PLP => ["00101000", undef, IMPLD],
+              PHA => ["01001000", undef, IMPLD],
+              PLA => ["01101000", undef, IMPLD],
+              DEY => ["10001000", undef, IMPLD],
+              TAY => ["10101000", undef, IMPLD],
+              INY => ["11001000", undef, IMPLD],
+              INX => ["11101000", undef, IMPLD],
+              CLC => ["00011000", undef, IMPLD],
+              SEC => ["00111000", undef, IMPLD],
+              CLI => ["01011000", undef, IMPLD],
+              SEI => ["01111000", undef, IMPLD],
+              TYA => ["10011000", undef, IMPLD],
+              CLV => ["10111000", undef, IMPLD],
+              CLD => ["11011000", undef, IMPLD],
+              SED => ["11111000", undef, IMPLD],
+              TXA => ["10001010", undef, IMPLD],
+              TXS => ["10011010", undef, IMPLD],
+              TAX => ["10101010", undef, IMPLD],
+              TSX => ["10111010", undef, IMPLD],
+              DEX => ["11001010", undef, IMPLD],
+              NOP => ["11101010", undef, IMPLD]
           );
 
 %addr_a = (
@@ -85,6 +101,11 @@
               ABSX => ["111", \%opcode_c],
              );
 
+%addr_d = (
+              ABS  => ["001100", undef],
+              INDR => ["101100", undef]
+          );
+
 # Compute the final field from existing hashes.
 foreach $mode (keys %addr_a)
 {
@@ -101,19 +122,22 @@ foreach $mode (keys %addr_c)
     $opcode_c{$mode} = ["00", undef];
 }
 
+
 # Address mode patterns
 $hexpat = "[0-9a-fA-F]";
 %addr_modes = (
-        IMM => ["^\\#\\\$".$hexpat."{2}\$"],
-        ZRP => ["^\\\$".$hexpat."{2}\$"],
-        ZPX => ["^\\\$".$hexpat."{2}\$", "^X\$"],
-        ABS => ["^\\\$".$hexpat."{4}\$"],
-        ABSX=> ["^\\\$".$hexpat."{4}\$", "^X\$"],
-        ABSY=> ["^\\\$".$hexpat."{4}\$", "^Y\$"],
-        INDX=> ["^\\(\\\$".$hexpat."{2},X\\)\$"],
-        INDY=> ["^\\(\\\$".$hexpat."{2}\\)\$", "^Y\$"],
-        INDR=> ["^\\(\\\$".$hexpat."{4}\\)\$"],
-        ACC => ["^A"] );
+        IMM => [0,"^\\#\\\$".$hexpat."{2}\$"],
+        ZRP => [1,"^\\\$".$hexpat."{2}\$"],
+        ZPX => [2,"^\\\$".$hexpat."{2}\$", "^X\$"],
+        ABS => [3,"^\\\$".$hexpat."{4}\$"],
+        ABSX=> [4,"^\\\$".$hexpat."{4}\$", "^X\$"],
+        ABSY=> [5,"^\\\$".$hexpat."{4}\$", "^Y\$"],
+        INDX=> [6,"^\\(\\\$".$hexpat."{2},X\\)\$"],
+        INDY=> [7,"^\\(\\\$".$hexpat."{2}\\)\$", "^Y\$"],
+        INDR=> [8,"^\\(\\\$".$hexpat."{4}\\)\$"],
+        REL => [9,"^\*[+-](\d|[1-9][0-9]|1[01][0-9]|12[0-7])\$"],
+        IMP => [10,"^\$"],
+        ACC => [11,"^A"] );
 
 while (<>)
 {
