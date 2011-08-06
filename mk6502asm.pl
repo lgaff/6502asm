@@ -154,187 +154,130 @@ sub tokenise
     my $line = shift;
     $tok  = "";
     @chars = (split(//, $line));
+	my @tokens;
 TOK:while (@chars)
     {
-#        print "Current token: [$tok] ";
-        $char = shift @chars;
-#        print "Next char is: [$char]\n";
-#        foreach $token (@tokens)
-#        {
-#            print "token ";
-#        }
-#        print $/;
-        if ($char =~ /[\b\,\s\t\n]/)
-        {
-            $match = 0;
-#            print "Found space, testing for valid token\n";
-            if (exists $instructions{uc $tok}) 
-            { 
-#                print "Found OPCODE, $tok\n";
-                push @tokens, ["OPCODE", uc($tok)];
-                $tok = "";
-                next;
-            }
-            if ($tok =~ /^[XYA]$/i)
-            {
-                push @tokens, ["REGISTER", uc($tok)];
-                $tok = "";
-                next;
-            }
-            if ($tok =~ /^\#\$($hexpat{2})/)
-            {
-                push @tokens, ["IMMEDIATE", $1];
-                $tok = "";
-                next;
-            }
-            if ($tok =~ /^\$($hexpat{$4})/)
-            {
-                push @tokens, ["ABSOLUTE", $1];
-                $tok = "";
-                next;
-            }
-            if ($tok =~ /^\$($hexpat{$2})/)
-            {
-                push @tokens, ["ZEROPAGE", $1];
-                $tok = "";
-                next;
-            }
-            if ($tok =~ /^[+-](\d|[1-9]\d|1[01]\d|12[0-7])$/)
-            {
-                push @tokens, ["RELATIVE", $tok];
-                $tok = "";
-                next;
-            }
-            if ($tok =~ /^[a-zA-Z_][a-zA-Z0-9_]+:?$/)
-            {
-#                print "Found LABEL, $tok \n";
-                push @tokens, ["LABEL", $tok];
-                $tok = "";
-                next;
-            }
-            if ($tok =~ /\=\$($hexpat{2,4})/i)
-            {
-                push @tokens, ["ADDRESS", uc($1)];
-                $tok = "";
-                next;
-            }
-            if ($tok =~ /^.byte$/i)
-            {
-                push @tokens, ["DEFB", undef];
-                $tok = "";
-                next;
-            }
-            if ($tok =~ /^.word$/i)
-            {
-                push @tokens, ["DEFW", undef];
-                $tok = "";
-                next;
-            }
-            if ($tok =~ /^([01]{,8})b$/i)
-            {
-                push @tokens, ["BINARY", $1];
-                $tok = "";
-                next;
-            }
-            if ($tok =~ /^($hexpat{2,4})h$/i)
-            {
-                push @tokens, ["HEX", $1];
-                $tok = "";
-                next;
-            }
-            if ($tok =~ /^0(0-7){3}$/)
-            {
-                push @tokens, ["OCTAL", $1];
-                $tok = "";
-                next;
-            }
-          
-        }
-        elsif ($char =~ ",") 
-        {
-            if ($tok != "")
-            {
-                $errstr = "Unexpected comma found, line $line, near $tok";
-                $err = 1;
-                break;
-            }
-            push @tokens, ["COMMA", undef];
+		while(1) {
+			$char = shift @chars;
+			last if ($char !~ /[\h]/);
 
-        }
-        elsif ($char =~ /\(/)
-        {
-            if ($tok !~ //)
-            {
-                $errstr = "Unexpected brace found, line $line near $tok";
-                $err = 1;
-            }
-            push @tokens, ["LBRACE", undef];
-        }
+		}
+		$match = 1;
+		$tok = $char;
+		while ($match)
+		{
+			$tokref = undef;
+			given ($tok)
+			{
+				when (/[\n;]|[^\w\h,\+\-\=:\(\)\"\'\!\@\#\$\%\^\&\*\<\>\.\/\\\?]/)	{ return @tokens }
+				when (/,/) { $tokref = ["COMMA", undef] }
+				when (/\+/) { $tokref = ["PLUS", undef] }
+				when (/\-/) { $tokref = ["MINUS", undef] }
+				when (/:/)  { $tokref = ["COLON", undef] }
+				when (/\=/) { $tokref = ["EQ", undef] }
+				when (/\(/) { $tokref = ["LBRACE", undef] }
+				when (/\)/) { $tokref = ["RBRACE", undef] }
+				when (/\"/) 
+				{
+					$tok = "";
+					$char = shift @chars;
+					QUOT: {
+						while ($char !~ /\\|\"|\n/) 
+						{
+							$tok .= $char;
+							$char = shift @chars;
+						}
+						given ($char)
+						{
+							when (/\\/) 
+							{
+								$char = shift @chars;
+								$tok .= $char;
+								$char = shift @chars;
+								redo QUOT;
+							}
+							when (/\"/) { $tokref = ["QUOTEDSTRING", $tok] }
+							default { return }
+						}
+					}
 
-        elsif ($char =~ /\)/)
-        {
-            if ($tok !~ //)
-            {
-                $errstr = "Unexpected brace found, line $line near $tok";
-                $err = 1;
-            }
-            push @tokens, ["RBRACE", undef];
-        }
-
-        elsif ($char =~ /\"/)
-        {
-            if ($tok != "")
-            {
-                $errstr = "unexpected quote found, line $line, near $tok";
-                $err = 1;
-                break;
-            }
-            else
-            {
-                while (@chars)
-                {
-                    $char = shift;
-                    if ($char !~ /\"/) 
-                    { 
-                        $tok .= $char 
-                    } elsif ($tok =~ /\\$/) 
-                    { 
-                        $tok .= $char 
-                    }
-                    else
-                    {
-                        push @tokens, ["STRING", $tok];
-                        $tok = "";
-                    }
-                }
-                if ($tok != "")
-                {
-                    $errstr = "Non-terminated string literal found at line $line";
-                    $err = 1;
-                }
-            }
-        }
-
-        elsif ($char =~ /;/)
-        {
-#            print "Found comment. Gobble gobble\n";
-            while (@chars) {$char = shift @chars}
-            next TOK;
-        }
-        elsif ($char !~ /^$/)
-        {
-            $tok .= $char;
-        }
-    }
-    return @tokens;
+				}
+				when (/[\h\t]/) { return  } # unmatched token
+				when (/^[a-zA-Z_]$/) 
+				{ 
+					# Look ahead until we either find an opcode, label or nothing.
+					while (($char = shift @chars) =~ /[a-zA-Z0-9_]/) { $tok .= $char }
+					given ($tok)
+					{
+						when (exists($instructions{uc$_})) { $tokref = ["OPCODE", $_] }
+						when (/^[XYA]$/i) { $tokref = ["REG", $_] }
+						default  { $tokref = ["LABEL", $_] }
+					}
+					unshift @chars, split(//, $char);
+				}
+				when (/#/)	
+				{ 
+					$char = shift @chars;
+					$tok .= $char;
+					given ($char)
+					{
+						when (/\$/)
+						{
+							while (($char = shift @chars) =~ /$hexpat/) { $tok .= $char }
+							$tokref = ["IMM", $tok];
+						}
+						when (/\d/)
+						{
+							while (($char = shift @chars) =~ /\d/) { $tok .= $char }
+							$tokref = ["IMM", $tok];
+						}
+						when (/[a-zA-Z_]/)
+						{
+							while (($char = shift @chars) =~ /\w/) { $tok .= $char }
+							$tokref = ["IMM", $tok];
+						}
+						default { return }
+					}
+					unshift @chars, split(//, $char);
+				}
+				when (/\$/)	
+				{
+					$char = shift @chars;
+					given ($char)
+					{
+						when (/$hexpat/)
+						{
+							$tok .= $char;
+							while (($char = shift @chars) =~ /$hexpat/) { $tok .= $char }
+							$tokref = ["HEX", $tok];
+						}
+						when (/\-|\+/)
+						{
+							$tokref = ["DOLLAR", undef];
+						}
+						default { return }
+					}
+					unshift @chars, split(//, $char);
+				}
+				when (/^\d|[1-9]\d|1[01]\d|12[0-7]$/) { $tokref = ["INT", $tok] } # Integers
+				when (/\./)	
+				{ 
+					$tok = "";
+					while (($char = shift @chars) =~ /[a-zA-Z]/) { $tok .= $char }
+					$tokref = ["DEF", $tok]; 	# definition macros
+					unshift @chars, split(//, $char);
+				}
+				default { $tok .= shift @chars }											# anything else
+			}
+			if (defined($tokref)) 
+			{
+				push @tokens, $tokref;
+				$tok = "";
+				$match = 0;
+			}
+		}
+	}
 }
-                
-
-
-
-
-
-                
 
 
 # Validate the address modes from the input line where necessary
@@ -351,119 +294,18 @@ while (<>)
     $line++;
 # tokenise the input line.
     @tokens = tokenise($_);
-    if (@tokens > 1)
-    {
         chomp;
-        ($output, undef) = split/;/;
-        $output =~ s/\t/ /g;
-        $output = sprintf("LINE: %04d: %-90s || ",$line, $output);
+        ($output, $comment) = split/;/;
+		if ($output =~ /^$/) { $output = "; " .$comment }
+        $output =~ s/\t/    /g;
+        $output = sprintf("LINE: %04d: %-70s | ",$line, $output);
         print $output;
         for $token (@tokens)
         {
             print "$token->[0]\[$token->[1]\] ";
         }
         print$/;
-    }
     @tokens = [];
-    next;
-
-    m/(?<LABEL>\w+(?=:))?:?\s*?(?<INSTR>\w{3,4})\s*(?<A1>(\#?\$?[a-fA-F0-9]{2,4})|\w+|A|\(.+?\))?,? *(?<A2>\$?([a-fA-F0-9]{2,4})|\w+|[XY])?/ || die("Syntax error. Line $line\n");
-
-    ($a1, $a2, $instr, $label) = ($+{A1}, $+{A2}, $+{INSTR}, $+{LABEL});
-    if($a1)
-    {
-        push @argv, $a1;
-    }
-    if($a2)
-    {
-        push @argv, $a2;
-    }
-    
-    $argc = scalar @argv;
-#    print "Line: $line ($_)\n";
-#    print "$argc arguments\n";
-#    foreach $key (keys %+)
-#    {
-#        print "$key: $+{$key}\n";
-#    }
-#    print "Address mode: ";
-    if ($argc == 0)
-    {
-        $mode = "IMP";
-#        print "Implied addressing\n";
-    }
-    else
-    {
-        $match = 0;
-        $mode = "";
-        foreach $key (keys %addr_modes)
-        {
-            next if $match == $argc;
-            $match = 0;
-#print "Testing $key\n";
-            if (@{$addr_modes{$key}} == $argc) # First check, filters out processing any modes that have a different arg count
-            {
-                $arg = 0;
-                while ($arg < $argc)
-                {
-#print "Testing $argv[$arg] against $addr_modes{$key}->[$arg], argument $arg\n";
-                    if($argv[$arg] =~ m/$addr_modes{$key}->[$arg]/)
-                    {
-#                       print "Matched\n";
-                        $match++;
-                        $mode = $key;
-                    }
-                    else
-                    {
-#                       print "Not matched\n";
-                    }
-                    $arg++;
-                }
-            }
-        }
-#        if ($match == $argc) # we have a winner Kay
-#        {
-#            print $mode .$/;
-#        }
-#        else
-#        {
-#            die "No matching address mode found\n";
-#        }
-    }
-
-#    print $/;
-    exists $instructions{$instr}|| die("Illegal instruction: $instr, line $line\n");
-    if ($label) # Check if the label is known, throw a redefinition error if so, or otherwise add its location to the symbol table
-    {
-        if(exists $symbol_table{$label}) {
-            die("Redefinition of symbol $label, line $line.\n");
-        }
-        else {
-            $symbol_table{$label} = $byte_loc;
-        }
-    }
-
-   $head = $instructions{$instr};
-   ($opcode, $fr) = ($head->[0], $head->[1]);
-   while ($fr)
-  {
-       exists $fr->{$mode}|| die("Illegal addressing mode $mode for instruction $instr, line $line\n");
-       $branch = $fr->{$mode};
-       ($fs, $fr) = ($branch->[0], $branch->[1]);
-       $opcode .= $fs;
-   }
-   $asm = sprintf("%02x", ord(pack("B8",$opcode)));
-   foreach $arg (@argv)
-   {
-       if ($arg =~ /\#?\$?($hexpat)/)
-       {
-           $asm .= $1;
-       }
-   }
-   print "$line\t$opcode\t$instr\t$a1\t$a2\t$mode\t";
-   print $asm;
-   print $/;
-   
 }
 
 
