@@ -1,4 +1,5 @@
-use feature "switch"; # This is a god damn godsend.
+use feature "switch"; 
+use POSIX qw (ceil);
 
 # Constant address mode masks
 use constant {
@@ -247,7 +248,7 @@ TOK:while (@chars)
 					{
 						when (/$hexpat/)
 						{
-							$tok .= $char;
+							$tok = $char;
 							while (($char = shift @chars) =~ /$hexpat/) { $tok .= $char }
 							$tokref = ["HEX", $tok];
 						}
@@ -280,33 +281,65 @@ TOK:while (@chars)
 }
 
 
-# Validate the address modes from the input line where necessary
-sub valid_addr()
+# Pass 1 simply scans for labels and pops the PC value into the symbol table for pass 2.
+
+sub pass_one
 {
+    my $line = shift;
+    my $sentence = "";
+    my $bytes = 0;
+    for $token (@{$line}) 
+    {
+        given ($token->[0])
+        {
+            when (/HEX/) { $bytes += ceil((length($token->[1])/2)) }
+            when (/IMM/) { $bytes += 1 }
+            when (/INT/) { $bytes += 1 }
+            when (/OPCODE/) { $bytes += 1 }
+            when (/DEF/) {
+                given ($token->[1])
+                {
+                    when (/byte/) { $bytes += 1 }
+                    when (/word/) { $bytes += 2 }
+                    when (/org/) { 
+                        $ORG = hex $token->[1];
+                    }
+                }
+            }
+            when (/QUOTEDSTRING/) { $bytes += length($token->[1]) }
+        }
+        $sentence .= "$token->[0] " 
+    }
+    given ($sentence) 
+    {
+        when (/^LABEL (EQ|COLON)?/) 
+        { 
+            if (!exists $symbol_table{$line->[0][1]}) { $symbol_table{$line->[0][1]} = $PC }
+            else { return }
+        }
+    }
+    $PC += $bytes;
+}
+
+    
+
+# Validate the address modes from the input line where necessary
+sub parse
+{
+
 }
 
 
 
-
+$PC = 0;
+$ORG = 0;
 while (<>)
 {
-    @argv = ();
     $line++;
-# tokenise the input line.
     @tokens = tokenise($_);
-        chomp;
-        ($output, $comment) = split/;/;
-		if ($output =~ /^$/) { $output = "; " .$comment }
-        $output =~ s/\t/    /g;
-        $output = sprintf("LINE: %04d: %-70s | ",$line, $output);
-        print $output;
-        for $token (@tokens)
-        {
-            print "$token->[0]\[$token->[1]\] ";
-        }
-        print$/;
+    if (scalar @tokens) { push @codelines, [@tokens] }
     @tokens = [];
 }
+while ($token_ref = shift @codelines) { pass_one($token_ref) }
 
-
-
+for $symbol (keys %symbol_table) { print "$symbol: $symbol_table{$symbol} \n"};
