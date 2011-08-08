@@ -296,11 +296,10 @@ sub pass_one
             when (/IMM/) { $bytes += 1 }
             when (/INT/) { $bytes += 1 }
             when (/OPCODE/) { $bytes += 1 }
-            when (/DEF/) {
+            when (/DEF/) # Un fsck this code later. it's a bit smelly.
+            {
                 given ($token->[1])
                 {
-                    when (/byte/) { $bytes += 1 }
-                    when (/word/) { $bytes += 2 }
                     when (/org/) { 
                         $ORG = hex $token->[1];
                     }
