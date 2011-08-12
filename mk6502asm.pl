@@ -173,6 +173,7 @@ TOK:while (@chars)
 				when (/[\n;]|[^\w\h,\+\-\=:\(\)\"\'\!\@\#\$\%\^\&\*\<\>\.\/\\\?]/)	{ return @tokens }
 				when (/,/) { $tokref = ["COMMA", undef] }
 				when (/\+/) { $tokref = ["PLUS", undef] }
+                when (/\*/) { $tokref = ["SPLAT", undef] }
 				when (/\-/) { $tokref = ["MINUS", undef] }
 				when (/:/)  { $tokref = ["COLON", undef] }
 				when (/\=/) { $tokref = ["EQ", undef] }
@@ -225,18 +226,21 @@ TOK:while (@chars)
 						when (/\$/)
 						{
 							while (($char = shift @chars) =~ /$hexpat/) { $tok .= $char }
-							$tokref = ["IMM", $tok];
+							$tokref = ["IMM", hex $tok];
 						}
 						when (/\d/)
 						{
 							while (($char = shift @chars) =~ /\d/) { $tok .= $char }
 							$tokref = ["IMM", $tok];
 						}
-						when (/[a-zA-Z_]/)
+						when (/L/i)
 						{
-							while (($char = shift @chars) =~ /\w/) { $tok .= $char }
-							$tokref = ["IMM", $tok];
+                            if (($char = shift @chars) =~ /O/i) { $tokref = ["LO", undef] }
 						}
+                        when (/H/i)
+                        {
+                            if (($char = shift @chars) =~ /I/i) { $tokref = ["HI", undef] }
+                        }
 						default { return }
 					}
 					unshift @chars, split(//, $char);
@@ -250,11 +254,7 @@ TOK:while (@chars)
 						{
 							$tok = $char;
 							while (($char = shift @chars) =~ /$hexpat/) { $tok .= $char }
-							$tokref = ["HEX", $tok];
-						}
-						when (/\-|\+/)
-						{
-							$tokref = ["DOLLAR", undef];
+							$tokref = ["HEX", hex $tok];
 						}
 						default { return }
 					}
@@ -292,41 +292,100 @@ sub pass_one
     {
         given ($token->[0])
         {
-            when (/HEX/) { $bytes += ceil((length($token->[1])/2)) }
-            when (/IMM/) { $bytes += 1 }
-            when (/INT/) { $bytes += 1 }
-            when (/OPCODE/) { $bytes += 1 }
+            when (/HEX/) { $bytes += $token->[1] >> 8 ? 2 : 1 }
+            when (/IMM/) { $bytes++ }
+            when (/INT/) { $bytes++ }
+            when (/OPCODE/) { $bytes++ }
             when (/DEF/) # Un fsck this code later. it's a bit smelly.
             {
                 given ($token->[1])
                 {
-                    when (/org/) { 
-                        $ORG = hex $token->[1];
-                    }
+                    when (/org/) { $ORG = hex $token->[1] }
                 }
             }
             when (/QUOTEDSTRING/) { $bytes += length($token->[1]) }
+            when (/LABEL (?!EQ|COLON)/) 
+            { $bytes++ }
         }
         $sentence .= "$token->[0] " 
     }
     given ($sentence) 
     {
-        when (/^LABEL (EQ|COLON)?/) 
+        when (/^LABEL (EQ|COLON)/) 
         { 
             if (!exists $symbol_table{$line->[0][1]}) { $symbol_table{$line->[0][1]} = $PC }
             else { return }
+            shift @{$line};
+            shift @{$line};
         }
     }
     $PC += $bytes;
+    return $line;
 }
 
-    
-
-# Validate the address modes from the input line where necessary
-sub parse
+sub pass_two
 {
+    my $line = shift;
+    my $sentence = "";
+    for $token (@{$line}) { $sentence .= "$token->[0] " }
+    given ($sentence)
+    {
+        ## First, the addressing modes ##
+        when (/^OPCODE $/) { $instruction = gen_code(IMPLD, $instructions{$line->[0][1]}) }
+        when (/^OPCODE REG $/)                                  # Accumulator
+        {
+            if ($line->[1][1] =~ /A/i) { $instruction = gen_code(ACMLT, $instructions{$line->[0][1]}) }
+            else { return }
+        }
+        when (/^OPCODE IMM $|(LO|HI(?= LABEL $))/)               # Immediate
+        {
+            $instruction = gen_code(IMMDT, $instructions{$line->[0][1]});
+            given ($line->[1][0]) 
+            {
+                # God help me for this...
+                when(/LO/)  { $arg = $ORG + ($symbol_table{$line->[2][1]} & 0xff00) }
+                when(/HI/)  { $arg = $ORG + ($symbol_table{$line->[2][1]} >> 8) }
+                when(/IMM/) { $arg = $line->[2][1] }
+            }
+            $instruction .= chr $arg;
+        }
+        when (/^OPCODE (HEX|LABEL) $/) { }                          # Relative(labelled), zero page, absolute
+        {
+            # If this is an instruction that uses relative, use relative. otherwise, see if zero page or abs fits
+            if ($instructions{$line->[0][1]}->[2] & RELTV) 
+            { $instruction = gen_code(RELTV, $instructions{$line->[0][1]}) }
+            else
+            {
+                if ($line->[1][0] =~ /HEX/)
+                {
+                    if ($line->[1][1] >> 8) { $instruction = gen_code(ABSLT, $instructions{$line->[0][1]}) }
+                    else { $instruction = gen_code(ZEROP, $instructions{$line->[0][1]}) }
+                    $arg = unpack
+                }
+                else 
+                {
+                    if ($symbol_table{$line->[1][1]} >> 8) 
+                    { $instruction = gen_code(ABSLT, $instructions{$line->[0][1]}) }
+                    else { $instruction = gen_code(ZEROP, $instructions{$line->[0][1]}) }
+                }
+            }
 
+
+        when (/^OPCODE (HEX|LABEL) COMMA REG $/) { }                # As above, but with a register.
+        when (/^OPCODE SPLAT (PLUS|MINUS) INT $/) { }               # Relative immediate
+        when (/^OPCODE LBRACE (HEX|LABEL) RBRACE $/) { }            # Indirect
+        when (/^OPCODE LBRACE (HEX|LABEL) COMMA REG RBRACE $/) { }  # Indexed indirect
+        when (/^OPCODE LBRACE (HEX|LABEL) RBRACE COMMA REG $/) { }  # Indirect indexed
+        ## Now, other cruft ##
+
+        when (/^DEF HEX (COMMA HEX)* $/) { }                        # Bytes and words
+        when (/^DEF QUOTEDSTRING$/) { }                             # String literals
+        when (/^(HEX|INT)$/) { }                                    # Constants, labels were removed in pass 1
+        default { }                                                 # anything else is an error.
+    }
 }
+
+
 
 
 
@@ -336,9 +395,14 @@ while (<>)
 {
     $line++;
     @tokens = tokenise($_);
-    if (scalar @tokens) { push @codelines, [@tokens] }
+    if (scalar @tokens) { push @raw_code, [@tokens] }
     @tokens = [];
 }
-while ($token_ref = shift @codelines) { pass_one($token_ref) }
+# First pass - resolve label declarations and add them to the symbol table.
+while ($token_ref = shift @raw_code) { $token_ref = pass_one($token_ref); if ($token_ref->[0][0]!~/^$/) { push(@pass1_code, $token_ref) } }
+
+# Second pass - Code generation
+while ($token_ref = shift @pass1_code) { push @object_code, pass_two($token_ref) }
+
 
 for $symbol (keys %symbol_table) { print "$symbol: $symbol_table{$symbol} \n"};
