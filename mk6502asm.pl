@@ -172,9 +172,9 @@ TOK:while (@chars)
 			{
 				when (/[\n;]|[^\w\h,\+\-\=:\(\)\"\'\!\@\#\$\%\^\&\*\<\>\.\/\\\?]/)	{ return @tokens }
 				when (/,/) { $tokref = ["COMMA", undef] }
-				when (/\+/) { $tokref = ["PLUS", undef] }
+				when (/\+/) { $tokref = ["PLUS", "+"] }
                 when (/\*/) { $tokref = ["SPLAT", undef] }
-				when (/\-/) { $tokref = ["MINUS", undef] }
+				when (/\-/) { $tokref = ["MINUS", "-"] }
 				when (/:/)  { $tokref = ["COLON", undef] }
 				when (/\=/) { $tokref = ["EQ", undef] }
 				when (/\(/) { $tokref = ["LBRACE", undef] }
@@ -328,6 +328,8 @@ sub pass_two
     my $line = shift;
     my $sentence = "";
     for $token (@{$line}) { $sentence .= "$token->[0] " }
+    # At the other side of this given block, we should have an instruction byte in $instruction, and any args
+    # as an integer value in $arg.
     given ($sentence)
     {
         ## First, the addressing modes ##
@@ -347,35 +349,56 @@ sub pass_two
                 when(/HI/)  { $arg = $ORG + ($symbol_table{$line->[2][1]} >> 8) }
                 when(/IMM/) { $arg = $line->[2][1] }
             }
-            $instruction .= chr $arg;
         }
         when (/^OPCODE (HEX|LABEL) $/) { }                          # Relative(labelled), zero page, absolute
         {
             # If this is an instruction that uses relative, use relative. otherwise, see if zero page or abs fits
             if ($instructions{$line->[0][1]}->[2] & RELTV) 
-            { $instruction = gen_code(RELTV, $instructions{$line->[0][1]}) }
+            { 
+                $instruction = gen_code(RELTV, $instructions{$line->[0][1]});
+                if ($line->[1][0] =~ /HEX/) { return }
+                else { ... } # This needs to be something like $ORG + label_addr - PC
+            }
             else
             {
                 if ($line->[1][0] =~ /HEX/)
                 {
                     if ($line->[1][1] >> 8) { $instruction = gen_code(ABSLT, $instructions{$line->[0][1]}) }
                     else { $instruction = gen_code(ZEROP, $instructions{$line->[0][1]}) }
-                    $arg = unpack
+                    $arg = hex $line->[1][1];
                 }
                 else 
                 {
                     if ($symbol_table{$line->[1][1]} >> 8) 
                     { $instruction = gen_code(ABSLT, $instructions{$line->[0][1]}) }
                     else { $instruction = gen_code(ZEROP, $instructions{$line->[0][1]}) }
+                    $arg = $ORG + $symbol_table{$line->[1][1]};
                 }
             }
 
 
-        when (/^OPCODE (HEX|LABEL) COMMA REG $/) { }                # As above, but with a register.
-        when (/^OPCODE SPLAT (PLUS|MINUS) INT $/) { }               # Relative immediate
+        when (/^OPCODE (HEX|LABEL) COMMA REG $/) # Indirect indexed (You are a moron. zp/Abs, Reg.)
+        { 
+            $arg = $line->[1][0] =~ /HEX/ ? hex($line->[1][1]) : $symbol_table{$line->[1][1]};
+
+                 }                
+        when (/^OPCODE SPLAT (PLUS|MINUS) INT $/)               # Relative immediate
+        {
+            $instruction = gen_code(RELTV, $instructions{$line->[0][1]});
+            $arg = int($line->[2][1] . $line->[3][1]);
+        }
         when (/^OPCODE LBRACE (HEX|LABEL) RBRACE $/) { }            # Indirect
         when (/^OPCODE LBRACE (HEX|LABEL) COMMA REG RBRACE $/) { }  # Indexed indirect
-        when (/^OPCODE LBRACE (HEX|LABEL) RBRACE COMMA REG $/) { }  # Indirect indexed
+        when (/^OPCODE LBRACE (HEX|LABEL) RBRACE COMMA REG $/)  # Indirect indexed
+        {
+            if ($line->[2][0] =~ /HEX/) { $arg = hex $line->[2][1] }
+            else { $arg = $symbol_table{$line->[2][1]} }
+            given ($line->[5][1])
+            {
+                when (/X/) { $instruction = gen_code(INDRX, $instructions{$line->[0][1]}) }
+                when (/Y/) { $instruction = gen_code(INDRY, $instructions{$line->[0][1]}) }
+            }
+        }
         ## Now, other cruft ##
 
         when (/^DEF HEX (COMMA HEX)* $/) { }                        # Bytes and words
@@ -386,7 +409,9 @@ sub pass_two
 }
 
 
-
+# as-yet unwritten gen_code sub goes WHERE!?
+sub gen_code
+{ ... }
 
 
 $PC = 0;
