@@ -77,36 +77,36 @@ use constant {
           );
 
 %addr_a = (
-              INDX => ["000", \%opcode_a],
-              ZRP  => ["001", \%opcode_a],
-              IMM  => ["010", \%opcode_a],
-              ABS  => ["011", \%opcode_a],
-              INDY => ["100", \%opcode_a],
-              ZPX  => ["101", \%opcode_a],
-              ABSY => ["110", \%opcode_a],
-              ABSX => ["111", \%opcode_a]
+              &INDRX => ["000", \%opcode_a],
+              &ZEROP => ["001", \%opcode_a],
+              &IMMDT => ["010", \%opcode_a],
+              &ABSLT => ["011", \%opcode_a],
+              &INDRY => ["100", \%opcode_a],
+              &ZEROX => ["101", \%opcode_a],
+              &ABSLY => ["110", \%opcode_a],
+              &ABSLX => ["111", \%opcode_a]
              );
 
 %addr_b = (
-              IMM  => ["000", \%opcode_b],
-              ZRP  => ["001", \%opcode_b],
-              ACC  => ["010", \%opcode_b],
-              ABS  => ["011", \%opcode_b],
-              ZPX  => ["101", \%opcode_b],
-              ABSX => ["111", \%opcode_b],
+              &IMMDT  => ["000", \%opcode_b],
+              &ZEROP  => ["001", \%opcode_b],
+              &ACMLT  => ["010", \%opcode_b],
+              &ABSLT  => ["011", \%opcode_b],
+              &ZEROX  => ["101", \%opcode_b],
+              &ABSLX => ["111", \%opcode_b],
              );
 
 %addr_c = (
-              IMM  => ["000", \%opcode_c],
-              ZRP  => ["001", \%opcode_c],
-              ABS  => ["011", \%opcode_c],
-              ZPX  => ["101", \%opcode_c],
-              ABSX => ["111", \%opcode_c],
+              &IMMDT  => ["000", \%opcode_c],
+              &ZEROP  => ["001", \%opcode_c],
+              &ABSLT  => ["011", \%opcode_c],
+              &ZEROX  => ["101", \%opcode_c],
+              &ABSLX => ["111", \%opcode_c],
              );
 
 %addr_d = (
-              ABS  => ["001100", undef],
-              INDR => ["101100", undef]
+              &ABSLT  => ["001100", undef],
+              &INDRC => ["101100", undef]
           );
 
 # Compute the final field from existing hashes.
@@ -211,7 +211,7 @@ TOK:while (@chars)
 					while (($char = shift @chars) =~ /[a-zA-Z0-9_]/) { $tok .= $char }
 					given ($tok)
 					{
-						when (exists($instructions{uc$_})) { $tokref = ["OPCODE", $_] }
+						when (exists($instructions{uc($_)})) { $tokref = ["OPCODE", uc($_)] }
 						when (/^[XYA]$/i) { $tokref = ["REG", $_] }
 						default  { $tokref = ["LABEL", $_] }
 					}
@@ -327,9 +327,12 @@ sub pass_two
 {
     my $line = shift;
     my $sentence = "";
+    my $instruction = undef;
+    my @args;
+    my $object;
     for $token (@{$line}) { $sentence .= "$token->[0] " }
     # At the other side of this given block, we should have an instruction byte in $instruction, and any args
-    # as an integer value in $arg.
+    # in $arg, as a binary string representation of its value.
     given ($sentence)
     {
         ## First, the addressing modes ##
@@ -345,54 +348,54 @@ sub pass_two
             given ($line->[1][0]) 
             {
                 # God help me for this...
-                when(/LO/)  { $arg = $ORG + ($symbol_table{$line->[2][1]} & 0xff00) }
-                when(/HI/)  { $arg = $ORG + ($symbol_table{$line->[2][1]} >> 8) }
-                when(/IMM/) { $arg = $line->[2][1] }
+                when(/LO/)  { push @args, $ORG + ($symbol_table{$line->[2][1]} & 0xff00) }
+                when(/HI/)  { push @args, $ORG + ($symbol_table{$line->[2][1]} >> 8) }
+                when(/IMM/) { push @args, $line->[2][1] }
             }
         }
-        when (/^OPCODE (HEX|LABEL) $/) { }                          # Relative(labelled), zero page, absolute
+        when (/^OPCODE (HEX|LABEL) $/)                          # Relative(labelled), zero page, absolute
         {
             # If this is an instruction that uses relative, use relative. otherwise, see if zero page or abs fits
             if ($instructions{$line->[0][1]}->[2] & RELTV) 
             { 
                 $instruction = gen_code(RELTV, $instructions{$line->[0][1]});
                 if ($line->[1][0] =~ /HEX/) { return }
-                else { ... } # This needs to be something like $ORG + label_addr - PC
+                else { push @args, $ORG + $symbol_table{$line->[1][1]} } # This needs to be something like $ORG + label_addr - PC
             }
             else
             {
                 if ($line->[1][0] =~ /HEX/)
                 {
+
                     if ($line->[1][1] >> 8) { $instruction = gen_code(ABSLT, $instructions{$line->[0][1]}) }
                     else { $instruction = gen_code(ZEROP, $instructions{$line->[0][1]}) }
-                    $arg = hex $line->[1][1];
+                    push @args, hex $line->[1][1];
                 }
                 else 
                 {
-                    if ($symbol_table{$line->[1][1]} >> 8) 
+                    if (($line->[0][1] == "JMP") || ($symbol_table{$line->[1][1]} >> 8))
                     { $instruction = gen_code(ABSLT, $instructions{$line->[0][1]}) }
                     else { $instruction = gen_code(ZEROP, $instructions{$line->[0][1]}) }
-                    $arg = $ORG + $symbol_table{$line->[1][1]};
+                    push @args, $ORG + $symbol_table{$line->[1][1]};
                 }
             }
-
+        }
 
         when (/^OPCODE (HEX|LABEL) COMMA REG $/) # Indirect indexed (You are a moron. zp/Abs, Reg.)
         { 
-            $arg = $line->[1][0] =~ /HEX/ ? hex($line->[1][1]) : $symbol_table{$line->[1][1]};
-
-                 }                
+            push @args, $line->[1][0] =~ /HEX/ ? hex($line->[1][1]) : $symbol_table{$line->[1][1]};
+        }                
         when (/^OPCODE SPLAT (PLUS|MINUS) INT $/)               # Relative immediate
         {
             $instruction = gen_code(RELTV, $instructions{$line->[0][1]});
-            $arg = int($line->[2][1] . $line->[3][1]);
+            push @args, int($line->[2][1] . $line->[3][1]);
         }
         when (/^OPCODE LBRACE (HEX|LABEL) RBRACE $/) { }            # Indirect
         when (/^OPCODE LBRACE (HEX|LABEL) COMMA REG RBRACE $/) { }  # Indexed indirect
         when (/^OPCODE LBRACE (HEX|LABEL) RBRACE COMMA REG $/)  # Indirect indexed
         {
             if ($line->[2][0] =~ /HEX/) { $arg = hex $line->[2][1] }
-            else { $arg = $symbol_table{$line->[2][1]} }
+            else { push @args, $symbol_table{$line->[2][1]} }
             given ($line->[5][1])
             {
                 when (/X/) { $instruction = gen_code(INDRX, $instructions{$line->[0][1]}) }
@@ -401,33 +404,111 @@ sub pass_two
         }
         ## Now, other cruft ##
 
-        when (/^DEF HEX (COMMA HEX)* $/) { }                        # Bytes and words
+        when (/DEF HEX (COMMA HEX)*/) 
+	{
+	    foreach $val (@{$line})
+	    {
+		if ($val->[0] =~ /HEX/) { push @args, $val->[1] }
+	    }
+	}
         when (/^DEF QUOTEDSTRING$/) { }                             # String literals
-        when (/^(HEX|INT)$/) { }                                    # Constants, labels were removed in pass 1
+        when (/^(HEX|INT) $/) { push @args, $line->[0][1] }                                    # Constants, labels were removed in pass 1
         default { }                                                 # anything else is an error.
     }
+    # Now, work out the args and so on.
+    if ($instruction) { $object = pack("B8", $instruction) }
+    # Walk the args array, checking type and casting as necessary. append char representations of each byte onto $object
+    foreach $arg (@args)
+    {
+	if ($arg > 0xFF) # multibyte.
+	{
+	    # The comma separated lists are pushed as bytes or words. So the size of $arg will be at most 16 bits. So we append it one byte at a time using mask and shift
+	    $object .= chr($arg & 0xFF00 >> 8);
+	    $object .= chr($arg >> 8);
+	}
+	else { $object .= chr $arg }
+    }
+    # $object should now contain a string representing the object code for this line.
+    return $object;
 }
+
 
 
 # as-yet unwritten gen_code sub goes WHERE!?
-sub gen_code
-{ ... }
+# gen_code takes 2 arguments:
+# Addressing mode
+# An array containing the instruction opcode, a reference to the relevant address mode table, and the valid address modes mask.
+# This should come from the %instructions hash.
+# Returns an integer value representing the 8 bit opcode.
 
+sub gen_code
+{ 
+    #This should work...
+    my $mode = shift;
+    $instr_vec = shift;
+    # Validate the address mode
+    ($opcode, $ref, $mask) = @{$instr_vec}[0,1,2];
+    $valid = $mode & $mask;
+    if ($valid)
+    {
+	$final_opcode = $opcode;
+	# We're in business. check if $ref is defined. if so, wander down the path until we have all the bits we need.
+	if (defined ($ref)) 
+	{
+	    do 
+	    { 
+		$final_opcode .= $$ref{$mode}->[0]; 
+		$ref = $$ref{$mode}->[1]; 
+	    } while (defined($ref))
+	}
+    }
+    else { $final_opcode = "YAGSHIMASH $mode $mask $valid \n" }
+    return $final_opcode;
+}
 
 $PC = 0;
 $ORG = 0;
+#$\ = $/;
 while (<>)
 {
     $line++;
+    chomp;
+    $source_listing{$line} = $_;
     @tokens = tokenise($_);
-    if (scalar @tokens) { push @raw_code, [@tokens] }
+    if (scalar @tokens) { $raw_code{$line} = [@tokens] }
     @tokens = [];
 }
+
 # First pass - resolve label declarations and add them to the symbol table.
-while ($token_ref = shift @raw_code) { $token_ref = pass_one($token_ref); if ($token_ref->[0][0]!~/^$/) { push(@pass1_code, $token_ref) } }
+foreach $token_ref ( sort {$a <=> $b} keys %raw_code )
+{ 
+    $raw_code{$token_ref} = pass_one($raw_code{$token_ref}); 
+    $pc_line{$token_ref} = $PC;
+    if ($raw_code{$token_ref}->[0][0]!~/^$/) { $pass1_code{$token_ref} = $raw_code{$token_ref} }
+}
+
 
 # Second pass - Code generation
-while ($token_ref = shift @pass1_code) { push @object_code, pass_two($token_ref) }
+foreach $token_ref (sort {$a <=> $b} keys %pass1_code) 
+{ 
+    $object_code{$token_ref} = pass_two($pass1_code{$token_ref});
+}
 
 
-for $symbol (keys %symbol_table) { print "$symbol: $symbol_table{$symbol} \n"};
+$PC = 0;
+foreach $source_line (sort {$a <=> $b} keys %source_listing) 
+{
+    $src_field = "";
+    $PC = exists $pc_line{$source_line} ? $pc_line{$source_line} : $PC;
+    if (exists $raw_code{$source_line})
+    {
+	foreach $object ($object_code{$source_line})
+	{
+	    @objects = unpack("C*", $object);
+	    foreach $obj (@objects) { $src_field .= sprintf "%02X ", $obj }
+	}
+    }
+    printf("%04X || %04X: %-24s | %s\n", $source_line, $PC, $src_field, $source_listing{$source_line});
+}
+
+#for $symbol (keys %symbol_table) { print "$symbol: $symbol_table{$symbol} \n"}
