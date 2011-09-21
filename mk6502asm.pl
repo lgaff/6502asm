@@ -155,129 +155,125 @@ sub tokenise
     my $line = shift;
     $tok  = "";
     @chars = (split(//, $line));
-	my @tokens;
-TOK:while (@chars)
+    my @tokens;
+  TOK:while (@chars)
+  {
+    while(1) 
     {
-		while(1) {
+	$char = shift @chars;
+	last if ($char !~ /[\h]/);
+    }
+    $match = 1;
+    $tok = $char;
+    while ($match)
+    {
+	$tokref = undef;
+	given ($tok)
+	{
+	    when (/[\n;]|[^\w\h,\+\-\=:\(\)\"\'\!\@\#\$\%\^\&\*\<\>\.\/\\\?]/)	{ return @tokens }
+	    when (/,/)  { $tokref = ["COMMA", undef] }
+	    when (/\+/) { $tokref = ["PLUS", "+"] }
+	    when (/\*/) { $tokref = ["SPLAT", undef] }
+	    when (/\-/) { $tokref = ["MINUS", "-"] }
+	    when (/:/)  { $tokref = ["COLON", undef] }
+	    when (/\=/) { $tokref = ["EQ", undef] }
+	    when (/\(/) { $tokref = ["LBRACE", undef] }
+	    when (/\)/) { $tokref = ["RBRACE", undef] }
+	    when (/\"/) 
+	    {
+		$tok = "";
+		$char = shift @chars;
+	        QUOT: {
+		    while ($char !~ /\\|\"|\n/) 
+		    {
+			$tok .= $char;
 			$char = shift @chars;
-			last if ($char !~ /[\h]/);
-
+		    }
+		    given ($char)
+		    {
+			when (/\\/) 
+			{
+			    $char = shift @chars;
+			    $tok .= $char;
+			    $char = shift @chars;
+			    redo QUOT;
+			}
+			when (/\"/) { $tokref = ["QUOTEDSTRING", $tok] }
+			default { return }
+		    }
 		}
-		$match = 1;
-		$tok = $char;
-		while ($match)
+	    }
+	    when (/[\h\t]/) { return  } # unmatched token
+	    when (/^[a-zA-Z_]$/) 
+	    { 
+		# Look ahead until we either find an opcode, label or nothing.
+		while (($char = shift @chars) =~ /[a-zA-Z0-9_]/) { $tok .= $char }
+		given ($tok)
 		{
-			$tokref = undef;
-			given ($tok)
-			{
-				when (/[\n;]|[^\w\h,\+\-\=:\(\)\"\'\!\@\#\$\%\^\&\*\<\>\.\/\\\?]/)	{ return @tokens }
-				when (/,/) { $tokref = ["COMMA", undef] }
-				when (/\+/) { $tokref = ["PLUS", "+"] }
-                when (/\*/) { $tokref = ["SPLAT", undef] }
-				when (/\-/) { $tokref = ["MINUS", "-"] }
-				when (/:/)  { $tokref = ["COLON", undef] }
-				when (/\=/) { $tokref = ["EQ", undef] }
-				when (/\(/) { $tokref = ["LBRACE", undef] }
-				when (/\)/) { $tokref = ["RBRACE", undef] }
-				when (/\"/) 
-				{
-					$tok = "";
-					$char = shift @chars;
-					QUOT: {
-						while ($char !~ /\\|\"|\n/) 
-						{
-							$tok .= $char;
-							$char = shift @chars;
-						}
-						given ($char)
-						{
-							when (/\\/) 
-							{
-								$char = shift @chars;
-								$tok .= $char;
-								$char = shift @chars;
-								redo QUOT;
-							}
-							when (/\"/) { $tokref = ["QUOTEDSTRING", $tok] }
-							default { return }
-						}
-					}
-
-				}
-				when (/[\h\t]/) { return  } # unmatched token
-				when (/^[a-zA-Z_]$/) 
-				{ 
-					# Look ahead until we either find an opcode, label or nothing.
-					while (($char = shift @chars) =~ /[a-zA-Z0-9_]/) { $tok .= $char }
-					given ($tok)
-					{
-						when (exists($instructions{uc($_)})) { $tokref = ["OPCODE", uc($_)] }
-						when (/^[XYA]$/i) { $tokref = ["REG", $_] }
-						default  { $tokref = ["LABEL", $_] }
-					}
-					unshift @chars, split(//, $char);
-				}
-				when (/#/)	
-				{ 
-					$char = shift @chars;
-					$tok .= $char;
-					given ($char)
-					{
-						when (/\$/)
-						{
-							while (($char = shift @chars) =~ /$hexpat/) { $tok .= $char }
-							$tokref = ["IMM", hex $tok];
-						}
-						when (/\d/)
-						{
-							while (($char = shift @chars) =~ /\d/) { $tok .= $char }
-							$tokref = ["IMM", $tok];
-						}
-						when (/L/i)
-						{
-                            if (($char = shift @chars) =~ /O/i) { $tokref = ["LO", undef] }
-						}
-                        when (/H/i)
-                        {
-                            if (($char = shift @chars) =~ /I/i) { $tokref = ["HI", undef] }
-                        }
-						default { return }
-					}
-					unshift @chars, split(//, $char);
-				}
-				when (/\$/)	
-				{
-					$char = shift @chars;
-					given ($char)
-					{
-						when (/$hexpat/)
-						{
-							$tok = $char;
-							while (($char = shift @chars) =~ /$hexpat/) { $tok .= $char }
-							$tokref = ["HEX", hex $tok];
-						}
-						default { return }
-					}
-					unshift @chars, split(//, $char);
-				}
-				when (/^\d|[1-9]\d|1[01]\d|12[0-7]$/) { $tokref = ["INT", $tok] } # Integers
-				when (/\./)	
-				{ 
-					$tok = "";
-					while (($char = shift @chars) =~ /[a-zA-Z]/) { $tok .= $char }
-					$tokref = ["DEF", $tok]; 	# definition macros
-					unshift @chars, split(//, $char);
-				}
-				default { $tok .= shift @chars }											# anything else
-			}
-			if (defined($tokref)) 
-			{
-				push @tokens, $tokref;
-				$tok = "";
-				$match = 0;
-			}
+		    when (exists($instructions{uc($_)})) { $tokref = ["OPCODE", uc($_)] }
+		    when (/^[XYA]$/i) { $tokref = ["REG", $_] }
+		    default  { $tokref = ["LABEL", $_] }
 		}
+		unshift @chars, split(//, $char);
+	    }
+	    when (/#/)	
+	    { 
+		$char = shift @chars;
+		$tok .= $char;
+		given ($char)
+		{
+		    when (/\$/)
+		    {
+
+			while (($char = shift @chars) =~ /$hexpat/) { $tok .= $char }
+			$tokref = ["IMM", hex $tok];
+		    }
+		    when (/\d/)
+		    {
+			while (($char = shift @chars) =~ /\d/) { $tok .= $char }
+			$tokref = ["IMM", $tok];
+		    }
+		    when (/L/i) { if (($char = shift @chars) =~ /O/i) { $tokref = ["LO", undef] } }
+		    when (/H/i) { if (($char = shift @chars) =~ /I/i) { $tokref = ["HI", undef] } }
+		    default { return }
+		}
+		unshift @chars, split(//, $char);
+	    }
+	    when (/\$/)	
+	    {
+		$char = shift @chars;
+		given ($char) # WTF!? Change this to an IF (YOU TOOL)
+		{
+		    when (/$hexpat/)
+		    {
+			$tok = $char;
+			while (($char = shift @chars) =~ /$hexpat/) { $tok .= $char }
+			$tokref = ["HEX", hex $tok];
+		    }
+		    default {  return }
+		}
+		unshift @chars, split(//, $char);
+	    }
+	    when (/^\d|[1-9]\d|1[01]\d|12[0-7]$/) { $tokref = ["INT", $tok] } # Integers
+	    when (/\./)	
+	    { 
+		$tok = "";
+		while (($char = shift @chars) =~ /[a-zA-Z]/) { $tok .= $char }
+		$tokref = ["DEF", $tok]; 	# definition macros
+		unshift @chars, split(//, $char);
+	    }
+	    default { $tok .= shift @chars }											# anything else
 	}
+	if (defined($tokref)) 
+	{
+	    push @tokens, $tokref;
+	    $tok = "";
+	    $match = 0;
+	}
+    }
+
+  }   
+    return @tokens;
 }
 
 
@@ -355,6 +351,7 @@ sub pass_two
         }
         when (/^OPCODE (HEX|LABEL) $/)                          # Relative(labelled), zero page, absolute
         {
+
             # If this is an instruction that uses relative, use relative. otherwise, see if zero page or abs fits
             if ($instructions{$line->[0][1]}->[2] & RELTV) 
             { 
@@ -374,7 +371,7 @@ sub pass_two
                 else 
                 {
                     if (($line->[0][1] == "JMP") || ($symbol_table{$line->[1][1]} >> 8))
-                    { $instruction = gen_code(ABSLT, $instructions{$line->[0][1]}) }
+                    { $instruction = gen_code(ABSLT, $instructions{$line->[0][1]})}
                     else { $instruction = gen_code(ZEROP, $instructions{$line->[0][1]}) }
                     push @args, $ORG + $symbol_table{$line->[1][1]};
                 }
@@ -475,6 +472,7 @@ while (<>)
     chomp;
     $source_listing{$line} = $_;
     @tokens = tokenise($_);
+    foreach $tokref (@tokens) { print $tokref->[0],$/ }
     if (scalar @tokens) { $raw_code{$line} = [@tokens] }
     @tokens = [];
 }
@@ -510,5 +508,11 @@ foreach $source_line (sort {$a <=> $b} keys %source_listing)
     }
     printf("%04X || %04X: %-24s | %s\n", $source_line, $PC, $src_field, $source_listing{$source_line});
 }
+    print "Symbol table: \n";
+    for $symbol (keys %symbol_table) { print "$symbol: $symbol_table{$symbol} \n"}
 
-#for $symbol (keys %symbol_table) { print "$symbol: $symbol_table{$symbol} \n"}
+print "Writing binary: ";
+open BIN, ">", "a.out";
+foreach $object_ref (sort {$a <=> $b} keys %object_code ) { print BIN $object_code{$object_ref} }
+close BIN;
+print "Done.\n";
